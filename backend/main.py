@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from routes import predictionRoute
+
 app = FastAPI(
     title="Fire Detection API",
     description="API for fire detection using ThingSpeak data",
@@ -14,6 +16,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(predictionRoute.router)
 
 @app.get("/")
 def root():

@@ -35,13 +35,21 @@ def fetch_latest_thingspeak_payload() -> SensorPayload:
         )
 
     feed = resp.json()
+    
+    print(f"ThingSpeak response: {feed}")
+
+    if not isinstance(feed, dict):
+        raise HTTPException(
+            status_code=502,
+            detail=f"ThingSpeak returned unexpected data type: {type(feed)}"
+        )
 
     try:
         return SensorPayload(
-            smoke=float(feed["field1"] or 0),
-            flame=int(float(feed["field2"] or 0)),
-            temperature=float(feed["field3"] or 0),
-            humidity=float(feed["field4"] or 0),
+            smoke=float(feed.get("field1") or 0),
+            flame=int(float(feed.get("field2") or 0)),
+            temperature=float(feed.get("field3") or 0),
+            humidity=float(feed.get("field4") or 0),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise HTTPException(
