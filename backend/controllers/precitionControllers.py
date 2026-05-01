@@ -8,15 +8,26 @@ from helper.thingspeak import (
     fetch_latest_thingspeak_payload,
     parse_webhook_payload
 )
+from helper.alert import send_fire_alert
 
 
 def predict_controller(payload: SensorPayload) -> PredictionResponse:
-    return run_inference(payload)
+    result = run_inference(payload)
+
+    if result.label_id == 2:
+        send_fire_alert(result)
+
+    return result
 
 
 def latest_controller() -> PredictionResponse:
     payload = fetch_latest_thingspeak_payload()
-    return run_inference(payload)
+    result = run_inference(payload)
+
+    if result.label_id == 2:
+        send_fire_alert(result)
+
+    return result
 
 
 def webhook_controller(data: dict) -> PredictionResponse:
@@ -24,5 +35,8 @@ def webhook_controller(data: dict) -> PredictionResponse:
     result = run_inference(payload)
 
     print(f"[WEBHOOK] → {result.label} ({result.confidence * 100:.1f}%)")
+
+    if result.label_id == 2:
+        send_fire_alert(result)
 
     return result
