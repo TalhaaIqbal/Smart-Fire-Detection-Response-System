@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Flame,
@@ -26,6 +26,10 @@ import {
   AreaChart,
   Area,
 } from "recharts";
+import axios from "axios";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "https://gradually-grain-gaming.ngrok-free.dev";
 
 const STATUS = {
   Normal: {
@@ -52,44 +56,36 @@ const STATUS = {
 };
 
 const initialReadings = [
-  { time: "10:00", smoke: 110, temperature: 27, humidity: 58, flame: 0, status: "Normal", confidence: 0.98 },
-  { time: "10:10", smoke: 150, temperature: 29, humidity: 54, flame: 0, status: "Normal", confidence: 0.96 },
-  { time: "10:20", smoke: 270, temperature: 38, humidity: 42, flame: 0, status: "Warning", confidence: 0.91 },
-  { time: "10:30", smoke: 410, temperature: 46, humidity: 34, flame: 0, status: "Warning", confidence: 0.93 },
-  { time: "10:40", smoke: 760, temperature: 72, humidity: 19, flame: 1, status: "Fire", confidence: 0.99 },
+  {
+    time: "--:--",
+    smoke: 0,
+    temperature: 0,
+    humidity: 0,
+    flame: 0,
+    status: "Normal",
+    confidence: 0,
+  },
 ];
 
-function classifyLocal({ smoke, flame, temperature, humidity }) {
-  if (flame === 1 || smoke >= 500 || temperature >= 55 || humidity <= 25) {
-    return { label: "Fire", label_id: 2, confidence: 0.97 };
-  }
-
-  if (smoke >= 200 || temperature >= 35 || humidity <= 40) {
-    return { label: "Warning", label_id: 1, confidence: 0.9 };
-  }
-
-  return { label: "Normal", label_id: 0, confidence: 0.96 };
-}
-
 function formatTime(date = new Date()) {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
-function randomReading(previous) {
-  const smoke = Math.max(60, Math.min(1023, previous.smoke + Math.round(Math.random() * 90 - 35)));
-  const temperature = Math.max(22, Math.min(95, Number((previous.temperature + Math.random() * 4 - 1.2).toFixed(1))));
-  const humidity = Math.max(12, Math.min(70, Number((previous.humidity + Math.random() * 3 - 2).toFixed(1))));
-  const flame = smoke > 620 || temperature > 63 ? 1 : 0;
-  const prediction = classifyLocal({ smoke, flame, temperature, humidity });
+function normalizeBackendResult(result) {
+  const input = result?.input || {};
 
   return {
     time: formatTime(),
-    smoke,
-    flame,
-    temperature,
-    humidity,
-    status: prediction.label,
-    confidence: prediction.confidence,
+    smoke: Number(input.smoke ?? 0),
+    flame: Number(input.flame ?? 0),
+    temperature: Number(input.temperature ?? 0),
+    humidity: Number(input.humidity ?? 0),
+    status: result?.label || "Normal",
+    confidence: Number(result?.confidence ?? 0),
   };
 }
 
@@ -106,8 +102,14 @@ function StatCard({ title, value, unit, icon: Icon, hint }) {
             <div>
               <p className="text-sm font-medium text-slate-500">{title}</p>
               <div className="mt-3 flex items-end gap-1">
-                <span className="text-3xl font-bold tracking-tight text-slate-900">{value}</span>
-                {unit && <span className="mb-1 text-sm font-semibold text-slate-500">{unit}</span>}
+                <span className="text-3xl font-bold tracking-tight text-slate-900">
+                  {value}
+                </span>
+                {unit && (
+                  <span className="mb-1 text-sm font-semibold text-slate-500">
+                    {unit}
+                  </span>
+                )}
               </div>
               <p className="mt-2 text-xs text-slate-400">{hint}</p>
             </div>
@@ -136,11 +138,15 @@ function StatusHero({ latest, connected }) {
         <div className="flex items-center gap-5">
           <motion.div
             animate={latest.status === "Fire" ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-            transition={{ repeat: latest.status === "Fire" ? Infinity : 0, duration: 1.1 }}
+            transition={{
+              repeat: latest.status === "Fire" ? Infinity : 0,
+              duration: 1.1,
+            }}
             className="rounded-3xl bg-slate-950 p-5 text-white shadow-lg"
           >
             <Icon size={34} />
           </motion.div>
+
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
@@ -158,15 +164,20 @@ function StatusHero({ latest, connected }) {
 
         <div className="grid grid-cols-2 gap-3 sm:flex">
           <div className="rounded-2xl bg-slate-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Device</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Device
+            </p>
             <p className="mt-1 flex items-center gap-2 text-sm font-bold text-slate-800">
               <Cpu size={15} /> ESP32_FB01
             </p>
           </div>
           <div className="rounded-2xl bg-slate-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Connection</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Connection
+            </p>
             <p className="mt-1 flex items-center gap-2 text-sm font-bold text-slate-800">
-              {connected ? <Wifi size={15} /> : <WifiOff size={15} />} {connected ? "Online" : "Offline"}
+              {connected ? <Wifi size={15} /> : <WifiOff size={15} />}
+              {connected ? "Online" : "Offline"}
             </p>
           </div>
         </div>
@@ -191,8 +202,10 @@ function ChartCard({ title, subtitle, children }) {
 
 export default function SmartFireDashboard() {
   const [readings, setReadings] = useState(initialReadings);
-  const [connected, setConnected] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const latest = readings[readings.length - 1];
 
@@ -201,45 +214,66 @@ export default function SmartFireDashboard() {
     [readings]
   );
 
-  const fireCount = useMemo(() => readings.filter((item) => item.status === "Fire").length, [readings]);
-  const warningCount = useMemo(() => readings.filter((item) => item.status === "Warning").length, [readings]);
+  const fireCount = useMemo(
+    () => readings.filter((item) => item.status === "Fire").length,
+    [readings]
+  );
 
-  useEffect(() => {
-    if (!autoRefresh) return;
+  const warningCount = useMemo(
+    () => readings.filter((item) => item.status === "Warning").length,
+    [readings]
+  );
 
-    const interval = setInterval(() => {
+  const fetchBackendLatest = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await axios.get(`http://127.0.0.1:8000/latest`);
+      console.log(response.data);
+
+      const result = response.data;
+      const next = normalizeBackendResult(result);
+
       setReadings((current) => {
-        const next = randomReading(current[current.length - 1]);
+        const last = current[current.length - 1];
+        const isDuplicate =
+          last.smoke === next.smoke &&
+          last.flame === next.flame &&
+          last.temperature === next.temperature &&
+          last.humidity === next.humidity &&
+          last.status === next.status;
+
+        if (isDuplicate && current.length > 1) {
+          return current;
+        }
+
         return [...current.slice(-11), next];
       });
+
+      setConnected(true);
+    } catch (err) {
+      console.error("Failed to fetch latest prediction:", err);
+      setConnected(false);
+      setError("Could not connect to FastAPI /latest. Check backend, ngrok, CORS, and .env URL.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBackendLatest();
+  }, [fetchBackendLatest]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+
+    const interval = setInterval(() => {
+      fetchBackendLatest();
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh]);
-
-  async function fetchBackendLatest() {
-    try {
-      setConnected(true);
-
-      // Replace this URL with your deployed FastAPI URL when ready.
-      // const response = await fetch("http://127.0.0.1:8000/latest");
-      // const result = await response.json();
-      // const next = {
-      //   time: formatTime(),
-      //   smoke: result.input.smoke,
-      //   flame: result.input.flame,
-      //   temperature: result.input.temperature,
-      //   humidity: result.input.humidity,
-      //   status: result.label,
-      //   confidence: result.confidence,
-      // };
-
-      const next = randomReading(latest);
-      setReadings((current) => [...current.slice(-11), next]);
-    } catch (error) {
-      setConnected(false);
-    }
-  }
+  }, [autoRefresh, fetchBackendLatest]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-orange-50/40 to-red-50 p-4 text-slate-900 md:p-8">
@@ -259,21 +293,31 @@ export default function SmartFireDashboard() {
 
           <div className="flex flex-wrap gap-3">
             <button
+              type="button"
               onClick={() => setAutoRefresh((value) => !value)}
-              className="rounded-2xl bg-slate-950 px-5 py-6 text-white hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 font-semibold text-white shadow-sm transition hover:bg-slate-800"
             >
-              <Activity className="mr-2" size={18} />
+              <Activity size={18} />
               {autoRefresh ? "Live Mode On" : "Live Mode Off"}
             </button>
+
             <button
+              type="button"
               onClick={fetchBackendLatest}
-              variant="outline"
-              className="rounded-2xl border-slate-200 bg-white/80 px-5 py-6 shadow-sm backdrop-blur hover:bg-white"
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-5 py-4 font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCw className="mr-2" size={18} /> Refresh
+              <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+              {loading ? "Refreshing" : "Refresh"}
             </button>
           </div>
         </header>
+
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {error}
+          </div>
+        )}
 
         <StatusHero latest={latest} connected={connected} />
 
@@ -300,7 +344,7 @@ export default function SmartFireDashboard() {
             </ChartCard>
           </div>
 
-          <ChartCard title="Risk Summary" subtitle="Warning and Fire event distribution">
+          <ChartCard title="Prediction Confidence" subtitle="Latest ML confidence trend">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={readings} margin={{ top: 10, right: 20, bottom: 0, left: -20 }}>
                 <defs>
@@ -311,7 +355,7 @@ export default function SmartFireDashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
-                <YAxis />
+                <YAxis domain={[0, 1]} />
                 <Tooltip />
                 <Area type="monotone" dataKey="confidence" strokeWidth={3} fill="url(#statusFill)" name="Confidence" />
               </AreaChart>
@@ -332,8 +376,8 @@ export default function SmartFireDashboard() {
                 </span>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200">
-                <table className="w-full text-left text-sm">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full min-w-[720px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Time</th>
@@ -353,7 +397,7 @@ export default function SmartFireDashboard() {
                           <td className="px-4 py-3">{event.flame === 1 ? "Yes" : "No"}</td>
                           <td className="px-4 py-3">{event.temperature}°C</td>
                           <td className="px-4 py-3">
-                            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS[event.status].badge}`}>
+                            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS[event.status]?.badge || STATUS.Normal.badge}`}>
                               {event.status}
                             </span>
                           </td>
