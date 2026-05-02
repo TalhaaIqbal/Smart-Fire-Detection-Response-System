@@ -1,5 +1,5 @@
-.env
 *.pkl
 __pycache__/
 node_modules/
 venv/
+config.bat
